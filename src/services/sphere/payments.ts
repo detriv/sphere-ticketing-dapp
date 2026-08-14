@@ -28,10 +28,14 @@ export async function payForTicket(
   recipient: string,
   amount: string,
 ): Promise<PaymentOutcome> {
+  // Sphere token engine requires the coinId to be the canonical lowercase hex
+  // (the 64-char id from sphere_getBalance), NOT the display symbol "UCT".
+  // Resolve it from the wallet balance before sending.
+  const coinId = await resolvePaymentCoinId(client);
   const res = await client.intent('send', {
     to: recipient,
     amount,
-    coinId: PAYMENT_COIN,
+    coinId,
     memo: 'SphereTickets: ticket purchase',
   });
   const r = res as unknown as { transferId?: string; status?: string; deliveryPending?: boolean };
@@ -40,6 +44,23 @@ export async function payForTicket(
     status: r.status ?? 'submitted',
     deliveryPending: Boolean(r.deliveryPending),
   };
+}
+
+/** Resolve the payment coin's canonical lowercase-hex coinId from the wallet. */
+async function resolvePaymentCoinId(client: ConnectClient): Promise<string> {
+  const balances = (await client.query('sphere_getBalance')) as Array<{
+    coinId: string;
+    symbol?: string;
+    totalAmount: string;
+  }>;
+  const wanted = PAYMENT_COIN.toLowerCase();
+  const found = balances.find(
+    (b) => b.coinId.toLowerCase() === wanted || (b.symbol ?? '').toLowerCase() === wanted,
+  );
+  if (!found) {
+    throw new Error(`Payment coin "${PAYMENT_COIN}" not found in this wallet.`);
+  }
+  return found.coinId;
 }
 
 /** Read the buyer's payment-coin balance (base-unit string). */
