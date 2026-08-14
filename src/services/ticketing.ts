@@ -84,44 +84,51 @@ export interface PurchaseResult {
 export async function purchaseTicket(
   client: ConnectClient,
   eventId: string,
+  qty = 1,
   onState: (s: 'preparing' | 'awaiting_wallet' | 'submitted' | 'confirming') => void,
 ): Promise<PurchaseResult> {
   const event = await store.getEvent(eventId);
   if (!event) throw new Error('Event not found.');
   if (event.onChain.remainingSupply <= 0) throw new Error('Event is sold out.');
+  if (qty < 1 || qty > event.onChain.remainingSupply) {
+    throw new Error(`You can buy between 1 and ${event.onChain.remainingSupply} tickets.`);
+  }
 
   onState('preparing');
   const id = (await client.query('sphere_getIdentity')) as { chainPubkey?: string };
   const buyer = id.chainPubkey ?? '';
   const balance = await getPaymentBalance(client);
-  if (BigInt(balance) < BigInt(event.onChain.priceBaseUnits)) {
+  const total = BigInt(event.onChain.priceBaseUnits) * BigInt(qty);
+  if (BigInt(balance) < total) {
     throw new Error('Insufficient balance to pay for this ticket.');
   }
 
   onState('awaiting_wallet');
   let payment;
   try {
-    payment = await payForTicket(client, event.onChain.organizerPubkey, event.onChain.priceBaseUnits);
+    payment = await payForTicket(client, event.onChain.organizerPubkey, total.toString());
   } catch (e) {
     throw new Error(describePaymentError(e));
   }
 
   onState('submitted');
   const issuedCount = (await store.listTicketsForEvent(eventId)).length;
-  const ticketIndex = issuedCount + 1;
   onState('confirming');
-  await store.issueTicket({
-    eventId,
-    tokenId: payment.transferId || `local-${Date.now()}`,
-    owner: buyer,
-    ticketIndex,
-    txId: payment.transferId,
-    issuedAt: Date.now(),
-  });
+  for (let i = 1; i <= qty; i++) {
+    await store.issueTicket({
+      eventId,
+      tokenId: payment.transferId || `local-${Date.now()}-${i}`,
+      owner: buyer,
+      ticketIndex: issuedCount + i,
+      txId: payment.transferId,
+      issuedAt: Date.now(),
+    });
+  }
 
   const updated = await store.getEvent(eventId);
   const mine = (await store.listTicketsForOwner(buyer)).find(
-    (t: TicketIssue & { event: Event }): boolean => t.eventId === eventId && t.ticketIndex === ticketIndex,
+    (t: TicketIssue & { event: Event }): boolean =>
+      t.eventId === eventId && t.ticketIndex === issuedCount + qty,
   );
   return {
     event: updated!,

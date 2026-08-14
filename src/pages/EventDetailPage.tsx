@@ -20,6 +20,7 @@ export function EventDetailPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
   const { wallet, client, connect, connecting } = useWallet();
+  const [qty, setQty] = useState(1);
   const [event, setEvent] = useState<Event | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [tx, setTx] = useState<TxState>('idle');
@@ -45,9 +46,10 @@ export function EventDetailPage() {
     setTx('preparing');
     setTicketId(null);
     try {
-      const res = await purchaseTicket(client, event.meta.eventId, (s) =>
+      const res = await purchaseTicket(client, event.meta.eventId, qty, (s) =>
         setTx(s as TxState),
       );
+      setEvent(res.event);
       setTx('success');
       setTicketId(res.ticket.tokenId);
     } catch (e) {
@@ -88,6 +90,12 @@ export function EventDetailPage() {
         <div>{event.onChain.remainingSupply}</div>
         <div className="k">Ticket Type</div>
         <div>{event.meta.ticketType}</div>
+        <div className="k">Revenue</div>
+        <div>
+          {(event.onChain.maxSupply - event.onChain.remainingSupply) *
+            Number(baseUnitsToHuman(event.onChain.priceBaseUnits))}{' '}
+          {PAYMENT_COIN_ID}
+        </div>
       </div>
 
       <div style={{ marginTop: 24 }}>
@@ -97,13 +105,31 @@ export function EventDetailPage() {
           </button>
         )}
         {wallet.connected && (
-          <button className="btn" disabled={!canBuy || tx === 'preparing' || tx === 'awaiting_wallet'} onClick={() => void buy()}>
-            {event.onChain.remainingSupply <= 0
-              ? 'Sold Out'
-              : Date.now() > event.meta.endTime
-                ? 'Event Ended'
-                : 'BUY TICKET'}
-          </button>
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <label htmlFor="qty" className="muted">Qty:</label>
+              <input
+                id="qty"
+                type="number"
+                min={1}
+                max={event.onChain.remainingSupply}
+                value={qty}
+                onChange={(e) => setQty(Math.max(1, Math.min(event.onChain.remainingSupply, Number(e.target.value) || 1)))}
+                style={{ width: 72, padding: '6px 8px' }}
+              />
+            </div>
+            <button
+              className="btn"
+              disabled={!canBuy || tx === 'preparing' || tx === 'awaiting_wallet'}
+              onClick={() => void buy()}
+            >
+              {event.onChain.remainingSupply <= 0
+                ? 'Sold Out'
+                : Date.now() > event.meta.endTime
+                  ? 'Event Ended'
+                  : `BUY ${qty} TICKET${qty > 1 ? 'S' : ''}`}
+            </button>
+          </>
         )}
         <TxStatus state={tx} />
         {tx === 'success' && ticketId && (
