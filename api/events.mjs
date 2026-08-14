@@ -26,7 +26,11 @@ export default async function handler(req, res) {
     } catch {
       return res.status(400).json({ error: 'invalid json' });
     }
-    const eventId = body.eventId || crypto.randomUUID();
+    // The client (ticketing.createEvent) builds a full Event whose canonical id
+    // lives at meta.eventId. Use THAT as the storage key so getEvent(id) matches
+    // the id the UI carries (event.meta.eventId). Do NOT generate a new id.
+    const eventId = body?.meta?.eventId || body?.eventId;
+    if (!eventId) return res.status(400).json({ error: 'missing eventId' });
     const record = { ...body, eventId, createdAt: Date.now() };
     db.events[eventId] = record;
     await writeDB(db);

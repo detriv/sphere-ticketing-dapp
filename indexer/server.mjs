@@ -83,7 +83,8 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === '/events' && method === 'POST') {
       const body = await readBody(req);
-      const eventId = body.eventId || randomUUID();
+      const eventId = body?.meta?.eventId || body?.eventId;
+      if (!eventId) return send(res, 400, { error: 'missing eventId' });
       const record = { ...body, eventId, createdAt: Date.now() };
       db.events[eventId] = record;
       save();
