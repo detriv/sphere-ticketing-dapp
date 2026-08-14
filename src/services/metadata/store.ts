@@ -12,7 +12,7 @@
 // This module is the single seam to swap for a real shared indexer (HTTP/IPFS)
 // later without touching the UI or the Sphere SDK calls.
 
-import type { Event, EventMetadata, Ticket } from '../../types';
+import type { Event, Ticket } from '../../types';
 
 export interface CreateEventArgs {
   name: string;
@@ -41,7 +41,9 @@ export interface TicketIssue {
 export interface MetadataStore {
   listEvents(): Promise<Event[]>;
   getEvent(eventId: string): Promise<Event | null>;
-  createEvent(args: CreateEventArgs): Promise<Event>;
+  /** Accepts a FULLY-BUILT Event (onChain + meta + status) so every backend
+   *  (localStorage, HTTP, ...) stores the same shape the UI consumes. */
+  createEvent(event: Event): Promise<Event>;
   issueTicket(ev: TicketIssue): Promise<void>;
   listTicketsForEvent(eventId: string): Promise<TicketIssue[]>;
   listTicketsForOwner(owner: string): Promise<Array<TicketIssue & { event: Event }>>;
@@ -62,86 +64,54 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 function write<T>(key: string, value: T): void {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* ignore quota errors */
+  }
 }
 
-function statusOf(ev: Event): Event['status'] {
-  const now = Date.now();
-  if (ev.onChain.remainingSupply <= 0) return 'SOLD_OUT';
-  if (now < ev.meta.startTime) return 'UPCOMING';
-  if (now > ev.meta.endTime) return 'ENDED';
-  return 'LIVE';
-}
-
-function toEvent(meta: EventMetadata, onChain: Event['onChain'], issued: number): Event {
-  const remaining = Math.max(0, onChain.maxSupply - issued);
+function ticketToView(t: TicketIssue & { event: Event }): Ticket {
   return {
-    meta,
-    onChain: { ...onChain, remainingSupply: remaining },
-    status: statusOf({
-      meta,
-      onChain: { ...onChain, remainingSupply: remaining },
-      status: 'UPCOMING',
-    }),
+    tokenId: t.tokenId,
+    eventId: t.eventId,
+    owner: t.owner,
+    eventName: t.event.meta.name,
+    eventDate: t.event.meta.startTime,
+    eventLocation: t.event.meta.location,
+    image: t.event.meta.image,
   };
 }
 
 export class LocalMetadataStore implements MetadataStore {
   async listEvents(): Promise<Event[]> {
-    const metas = read<Record<string, EventMetadata>>(EV_KEY, {});
-    const chains = read<Record<string, Event['onChain']>>(EV_KEY + ':chain', {});
-    const issuedMap = read<Record<string, number>>(TK_KEY + ':count', {});
-    return Object.values(metas).map((m) => {
-      const oc = chains[m.eventId];
-      return toEvent(m, oc, issuedMap[m.eventId] ?? 0);
-    });
+    const events = read<Record<string, Event>>(EV_KEY, {});
+    return Object.values(events).sort((a, b) => b.meta.startTime - a.meta.startTime);
   }
 
   async getEvent(eventId: string): Promise<Event | null> {
-    const metas = read<Record<string, EventMetadata>>(EV_KEY, {});
-    const chains = read<Record<string, Event['onChain']>>(EV_KEY + ':chain', {});
-    const issuedMap = read<Record<string, number>>(TK_KEY + ':count', {});
-    const m = metas[eventId];
-    const oc = chains[eventId];
-    if (!m || !oc) return null;
-    return toEvent(m, oc, issuedMap[eventId] ?? 0);
+    const events = read<Record<string, Event>>(EV_KEY, {});
+    return events[eventId] ?? null;
   }
 
-  async createEvent(args: CreateEventArgs): Promise<Event> {
-    const metas = read<Record<string, EventMetadata>>(EV_KEY, {});
-    const chains = read<Record<string, Event['onChain']>>(EV_KEY + ':chain', {});
-    const meta: EventMetadata = {
-      eventId: args.ticketCoinId,
-      name: args.name,
-      description: args.description,
-      image: args.image,
-      location: args.location,
-      startTime: args.startTime,
-      endTime: args.endTime,
-      ticketType: 'General Admission',
-    };
-    const onChain: Event['onChain'] = {
-      ticketCoinId: args.ticketCoinId,
-      paymentCoinId: args.paymentCoinId,
-      organizerPubkey: args.organizerPubkey,
-      maxSupply: args.maxSupply,
-      remainingSupply: args.maxSupply,
-      priceBaseUnits: args.ticketPrice,
-    };
-    metas[meta.eventId] = meta;
-    chains[meta.eventId] = onChain;
-    write(EV_KEY, metas);
-    write(EV_KEY + ':chain', chains);
-    return toEvent(meta, onChain, 0);
+  async createEvent(event: Event): Promise<Event> {
+    const events = read<Record<string, Event>>(EV_KEY, {});
+    events[event.meta.eventId] = event;
+    write(EV_KEY, events);
+    return event;
   }
 
   async issueTicket(ev: TicketIssue): Promise<void> {
-    const list = read<TicketIssue[]>(TK_KEY, []);
-    list.push(ev);
-    write(TK_KEY, list);
-    const counts = read<Record<string, number>>(TK_KEY + ':count', {});
-    counts[ev.eventId] = (counts[ev.eventId] ?? 0) + 1;
-    write(TK_KEY + ':count', counts);
+    const tickets = read<TicketIssue[]>(TK_KEY, []);
+    tickets.push(ev);
+    write(TK_KEY, tickets);
+    const events = read<Record<string, Event>>(EV_KEY, {});
+    const e = events[ev.eventId];
+    if (e) {
+      e.onChain.remainingSupply = Math.max(0, e.onChain.remainingSupply - 1);
+      if (e.onChain.remainingSupply === 0) e.status = 'SOLD_OUT';
+      write(EV_KEY, events);
+    }
   }
 
   async listTicketsForEvent(eventId: string): Promise<TicketIssue[]> {
@@ -153,17 +123,10 @@ export class LocalMetadataStore implements MetadataStore {
     owner: string,
   ): Promise<Array<TicketIssue & { event: Event }>> {
     const list = read<TicketIssue[]>(TK_KEY, []);
-    const events = read<Record<string, EventMetadata>>(EV_KEY, {});
-    const chains = read<Record<string, Event['onChain']>>(EV_KEY + ':chain', {});
-    const counts = read<Record<string, number>>(TK_KEY + ':count', {});
+    const events = read<Record<string, Event>>(EV_KEY, {});
     return list
       .filter((t) => t.owner.toLowerCase() === owner.toLowerCase())
-      .map((t) => {
-        const m = events[t.eventId];
-        const oc = chains[t.eventId];
-        const ev = m && oc ? toEvent(m, oc, counts[t.eventId] ?? 0) : null;
-        return { ...t, event: ev! };
-      })
+      .map((t) => ({ ...t, event: events[t.eventId] }))
       .filter((x) => x.event);
   }
 
@@ -173,14 +136,4 @@ export class LocalMetadataStore implements MetadataStore {
   }
 }
 
-export function ticketToView(t: TicketIssue & { event: Event }): Ticket {
-  return {
-    tokenId: t.tokenId,
-    eventId: t.eventId,
-    owner: t.owner,
-    eventName: t.event.meta.name,
-    eventDate: t.event.meta.startTime,
-    eventLocation: t.event.meta.location,
-    image: t.event.meta.image,
-  };
-}
+export { ticketToView };

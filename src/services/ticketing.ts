@@ -32,7 +32,9 @@ export const store: MetadataStore = INDEXER_URL
 
 export const PAYMENT_COIN_ID = PAYMENT_COIN;
 
-/** Create an event: record metadata off-chain + return on-chain coin id to use. */
+/** Create an event: build the full Event (onChain + meta + status) off-chain,
+ *  record it in the indexer, and return it. The on-chain "coin id" analogue is
+ *  the organizer's payment coin (Sphere V1 has no per-event coin creation). */
 export async function createEvent(
   client: ConnectClient,
   args: Omit<CreateEventArgs, 'organizerPubkey' | 'organizerNametag' | 'paymentCoinId' | 'ticketCoinId'>,
@@ -43,13 +45,30 @@ export async function createEvent(
   // unique per-ticket transfer id (recorded on-chain) is what makes each ticket
   // individually identifiable. This is documented in README "Known Limitations".
   const ticketCoinId = PAYMENT_COIN_ID;
-  return store.createEvent({
-    ...args,
-    paymentCoinId: PAYMENT_COIN_ID,
-    ticketCoinId,
-    organizerPubkey: id.chainPubkey ?? '',
-    organizerNametag: id.nametag ?? null,
-  });
+  const eventId = crypto.randomUUID();
+  const event: Event = {
+    onChain: {
+      ticketCoinId,
+      paymentCoinId: PAYMENT_COIN_ID,
+      organizerPubkey: id.chainPubkey ?? '',
+      organizerNametag: id.nametag ?? null,
+      maxSupply: args.maxSupply,
+      remainingSupply: args.maxSupply,
+      priceBaseUnits: args.ticketPrice,
+    },
+    meta: {
+      eventId,
+      name: args.name,
+      description: args.description,
+      image: args.image,
+      location: args.location,
+      startTime: args.startTime,
+      endTime: args.endTime,
+      ticketType: 'General Admission',
+    },
+    status: Date.now() < args.startTime ? 'UPCOMING' : 'LIVE',
+  };
+  return store.createEvent(event);
 }
 
 export interface PurchaseResult {

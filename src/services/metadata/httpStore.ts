@@ -1,11 +1,15 @@
 // Shared HTTP-backed metadata store (V1 indexer).
 //
-// Talks to indexer/server.mjs (or any compatible backend). This makes events and
-// ticket issuance visible to EVERY connected user, fixing the localStorage
-// per-device limitation. See README "Known Limitations #3".
+// Talks to indexer/server.mjs (or any compatible backend — Vercel serverless
+// functions under /api). This makes events and ticket issuance visible to EVERY
+// connected user, fixing the localStorage per-device limitation. See README
+// "Known Limitations #3".
+//
+// The backend stores and returns the SAME Event shape the UI consumes
+// ({ onChain, meta, status }), so no client-side reshaping is needed.
 
 import type { Event } from '../../types';
-import { type CreateEventArgs, type MetadataStore, type TicketIssue } from './store';
+import { type MetadataStore, type TicketIssue } from './store';
 
 export class HttpMetadataStore implements MetadataStore {
   constructor(private readonly baseUrl: string) {}
@@ -22,8 +26,8 @@ export class HttpMetadataStore implements MetadataStore {
     return (await res.json()) as T;
   }
 
-  async createEvent(args: CreateEventArgs): Promise<Event> {
-    return this.req<Event>('/events', { method: 'POST', body: JSON.stringify(args) });
+  async listEvents(): Promise<Event[]> {
+    return this.req<Event[]>('/events');
   }
 
   async getEvent(eventId: string): Promise<Event | null> {
@@ -34,8 +38,8 @@ export class HttpMetadataStore implements MetadataStore {
     }
   }
 
-  async listEvents(): Promise<Event[]> {
-    return this.req<Event[]>('/events');
+  async createEvent(event: Event): Promise<Event> {
+    return this.req<Event>('/events', { method: 'POST', body: JSON.stringify(event) });
   }
 
   async issueTicket(ev: TicketIssue): Promise<void> {
@@ -43,10 +47,7 @@ export class HttpMetadataStore implements MetadataStore {
   }
 
   async listTicketsForEvent(eventId: string): Promise<TicketIssue[]> {
-    const list = await this.req<TicketIssue[]>(
-      `/tickets?eventId=${encodeURIComponent(eventId)}`,
-    );
-    return list;
+    return this.req<TicketIssue[]>(`/tickets?eventId=${encodeURIComponent(eventId)}`);
   }
 
   async listTicketsForOwner(owner: string): Promise<Array<TicketIssue & { event: Event }>> {
