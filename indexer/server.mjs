@@ -9,6 +9,7 @@
 //
 // Run:  node indexer/server.mjs            (listens on :4178)
 //   or:  PORT=8080 node indexer/server.mjs
+//   or:  DATA_DIR=/var/data node indexer/server.mjs   (persistent disk on Render/Railway)
 
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -17,7 +18,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR || join(__dirname, 'data');
 const DATA_FILE = join(DATA_DIR, 'store.json');
 const PORT = Number(process.env.PORT || 4178);
 

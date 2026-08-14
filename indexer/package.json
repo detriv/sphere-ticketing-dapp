@@ -1,0 +1,14 @@
+{
+  "name": "sphere-ticketing-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared metadata indexer for SphereTickets (deploy to Render/Railway as a web service).",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
