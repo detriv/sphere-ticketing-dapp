@@ -3,9 +3,5 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "rewrites": [
-    { "source": "/api/events/:path*", "destination": "/api/events" },
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/:path*", "destination": "/index.html" }
-  ]
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/$1" }]
 }

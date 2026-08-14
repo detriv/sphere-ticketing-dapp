@@ -13,10 +13,8 @@ export function CreateEventPage() {
     description: '',
     image: '',
     location: '',
-    startDate: '',
-    startTime: '',
-    endDate: '',
-    endTime: '',
+    start: '',
+    end: '',
     price: '',
     supply: '',
   });
@@ -31,10 +29,10 @@ export function CreateEventPage() {
     if (!form.description.trim()) return 'Description is required.';
     if (!form.image.trim()) return 'Image is required.';
     if (!form.location.trim()) return 'Location is required.';
-    const start = new Date(`${form.startDate}T${form.startTime}`).getTime();
-    const end = new Date(`${form.endDate}T${form.endTime}`).getTime();
-    if (!form.startDate || Number.isNaN(start)) return 'Valid start date/time is required.';
-    if (!form.endDate || Number.isNaN(end)) return 'Valid end date/time is required.';
+    const start = new Date(form.start).getTime();
+    const end = new Date(form.end).getTime();
+    if (!form.start || Number.isNaN(start)) return 'Valid start date/time is required.';
+    if (!form.end || Number.isNaN(end)) return 'Valid end date/time is required.';
     if (end <= start) return 'End date/time must be after start.';
     const price = Number(form.price);
     if (!price || price <= 0) return 'Ticket price must be greater than zero.';
@@ -53,8 +51,8 @@ export function CreateEventPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const start = new Date(`${form.startDate}T${form.startTime}`).getTime();
-      const end = new Date(`${form.endDate}T${form.endTime}`).getTime();
+      const start = new Date(form.start).getTime();
+      const end = new Date(form.end).getTime();
       const ev = await createEvent(client, {
         name: form.name.trim(),
         description: form.description.trim(),
@@ -106,22 +104,12 @@ export function CreateEventPage() {
       </div>
       <div className="row">
         <div className="field" style={{ flex: 1 }}>
-          <label>Start Date</label>
-          <input className="input" type="date" value={form.startDate} onChange={set('startDate')} />
+          <label>Start Date &amp; Time</label>
+          <input className="input" type="datetime-local" value={form.start} onChange={set('start')} />
         </div>
         <div className="field" style={{ flex: 1 }}>
-          <label>Start Time</label>
-          <input className="input" type="time" value={form.startTime} onChange={set('startTime')} />
-        </div>
-      </div>
-      <div className="row">
-        <div className="field" style={{ flex: 1 }}>
-          <label>End Date</label>
-          <input className="input" type="date" value={form.endDate} onChange={set('endDate')} />
-        </div>
-        <div className="field" style={{ flex: 1 }}>
-          <label>End Time</label>
-          <input className="input" type="time" value={form.endTime} onChange={set('endTime')} />
+          <label>End Date &amp; Time</label>
+          <input className="input" type="datetime-local" value={form.end} onChange={set('end')} />
         </div>
       </div>
       <div className="row">
